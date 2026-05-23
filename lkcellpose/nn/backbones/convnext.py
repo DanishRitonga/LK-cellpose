@@ -23,11 +23,11 @@ def convnextv2_backbone(name: str = "convnextv2_base", pretrained: bool = True,
         model: nn.Module that returns list of 4 feature maps when called
         feature_info: dict with "channels" (list of ints) and "reductions" (list of ints)
     """
-    checkpoint_name = pretrained_tag if pretrained else None
+    pretrained_cfg = pretrained_tag if pretrained else None
     model = timm.create_model(
         name,
         pretrained=pretrained,
-        checkpoint_name=checkpoint_name,
+        pretrained_cfg=pretrained_cfg,
         features_only=True,
         **kwargs,
     )
