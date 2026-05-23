@@ -2,10 +2,11 @@ import numpy as np
 import torch
 from pathlib import Path
 from torch.utils.data import Dataset
+from tqdm import tqdm
 
 from lkcellpose.data.transforms import normalize_img, cache_flows, compute_class_map
 from lkcellpose.data.augment import CellposeAugment
-from lkcellpose.utils import NUCLEUS_CLASSES
+from lkcellpose.utils import NUCLEUS_CLASSES, LOGGER
 
 
 class PanNukeDataset(Dataset):
@@ -46,6 +47,8 @@ class PanNukeDataset(Dataset):
             self._load_from_npy(data_dir, fold)
         else:
             self._load_from_huggingface(fold)
+
+        self._preload_cache()
 
     def _load_from_huggingface(self, fold):
         from datasets import load_dataset
@@ -89,6 +92,27 @@ class PanNukeDataset(Dataset):
                 "categories": categories,
                 "tissue": 0,
             })
+
+    def _preload_cache(self):
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        uncached = []
+        for sample in self.samples:
+            cache_path = self.cache_dir / f"fold{sample['fold']}_{sample['idx']:06d}.npz"
+            if not cache_path.exists():
+                uncached.append(sample)
+        if not uncached:
+            return
+        LOGGER.info(f"Caching flow fields for {len(uncached)}/{len(self.samples)} images...")
+        for sample in tqdm(uncached, desc="Caching flows", unit="img"):
+            if "instance_map" in sample:
+                labels = sample["instance_map"]
+                categories = sample["categories"]
+            else:
+                labels, categories = self._build_instance_map(sample)
+            cache_flows(
+                self.cache_dir, sample["idx"], sample["fold"],
+                labels, categories, device=torch.device("cpu"),
+            )
 
     def __len__(self):
         return len(self.samples)
