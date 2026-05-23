@@ -36,7 +36,8 @@ class PanopticValidator(BaseValidator):
             flow_threshold = self.args.get("flow_threshold", 0.4) if hasattr(self.args, "get") else 0.4
             min_size = self.args.get("min_size", 15) if hasattr(self.args, "get") else 15
 
-            pred_labels = compute_masks(flow_y, flow_x, cellprob,
+            flows = np.stack([flow_y, flow_x], axis=0)
+            pred_labels = compute_masks(flows, cellprob,
                                         cellprob_threshold=cellprob_threshold,
                                         flow_threshold=flow_threshold,
                                         min_size=min_size)
