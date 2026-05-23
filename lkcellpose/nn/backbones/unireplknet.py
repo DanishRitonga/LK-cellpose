@@ -12,8 +12,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from timm.models.layers import trunc_normal_, DropPath, to_2tuple
-from timm.models.registry import register_model
+from timm.layers import trunc_normal_, DropPath, to_2tuple
+from timm.models import register_model
 import torch.utils.checkpoint as cp
 
 try:
