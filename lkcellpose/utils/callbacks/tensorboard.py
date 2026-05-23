@@ -25,7 +25,11 @@ def on_fit_epoch_end(trainer):
     trainer.writer.add_scalar("train/lr", lr, trainer.epoch)
     if hasattr(trainer, "metrics") and trainer.metrics:
         for k, v in trainer.metrics.items():
-            trainer.writer.add_scalar(f"val/{k}", v, trainer.epoch)
+            if isinstance(v, dict):
+                for kk, vv in v.items():
+                    trainer.writer.add_scalar(f"val/{k}/{kk}", vv, trainer.epoch)
+            else:
+                trainer.writer.add_scalar(f"val/{k}", v, trainer.epoch)
 
 
 def on_train_end(trainer):
