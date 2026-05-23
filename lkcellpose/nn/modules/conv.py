@@ -47,13 +47,19 @@ class DropBlock(nn.Module):
 
 
 class ConvBlock(nn.Module):
-    def __init__(self, in_ch, out_ch):
+    def __init__(self, in_ch, out_ch, style_ch=None):
         super().__init__()
         self.conv1 = Conv(in_ch, out_ch)
         self.conv2 = Conv(out_ch, out_ch)
         self.shortcut = (
             nn.Identity() if in_ch == out_ch else Conv(in_ch, out_ch, k=1, s=1)
         )
+        self.style_proj = nn.Linear(style_ch, out_ch) if style_ch else None
 
-    def forward(self, x):
-        return self.conv2(self.conv1(x)) + self.shortcut(x)
+    def forward(self, x, style=None):
+        h = self.conv1(x)
+        if self.style_proj is not None and style is not None:
+            s = self.style_proj(style).unsqueeze(-1).unsqueeze(-1)
+            h = h + s
+        h = self.conv2(h)
+        return h + self.shortcut(x)
