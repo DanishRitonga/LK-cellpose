@@ -40,7 +40,8 @@ class PanopticValidator(BaseValidator):
             pred_labels = compute_masks(flows, cellprob,
                                         cellprob_threshold=cellprob_threshold,
                                         flow_threshold=flow_threshold,
-                                        min_size=min_size)
+                                        min_size=min_size,
+                                        device=self.device)
 
             gt_labels = batch["labels"][b].cpu().numpy()
 

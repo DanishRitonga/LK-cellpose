@@ -1,8 +1,10 @@
 import numpy as np
+import torch
 
 
 def compute_masks(flows, cellprob, cellprob_threshold=0.0,
-                  flow_threshold=0.4, min_size=15, niter=200):
+                  flow_threshold=0.4, min_size=15, niter=200,
+                  device=None):
     """Compute instance masks from Cellpose flow fields using cellpose dynamics.
 
     Args:
@@ -12,11 +14,16 @@ def compute_masks(flows, cellprob, cellprob_threshold=0.0,
         flow_threshold: max flow error to keep a mask
         min_size: minimum mask size in pixels
         niter: number of Euler integration steps
+        device: torch.device for Euler integration (default CPU, pass CUDA for GPU)
 
     Returns:
         masks: (H, W) integer array, 0=background, 1,2,...=instances
     """
     from cellpose import dynamics
+    if device is None:
+        device = torch.device("cpu")
+    elif isinstance(device, str):
+        device = torch.device(device)
     result = dynamics.compute_masks(
         flows,
         cellprob,
@@ -24,6 +31,7 @@ def compute_masks(flows, cellprob, cellprob_threshold=0.0,
         flow_threshold=flow_threshold,
         min_size=min_size,
         niter=niter,
+        device=device,
     )
     if isinstance(result, tuple):
         mask = result[0]

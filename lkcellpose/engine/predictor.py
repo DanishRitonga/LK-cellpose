@@ -110,6 +110,7 @@ class BasePredictor:
             flow_threshold=self.flow_threshold,
             min_size=self.min_size,
             niter=self.niter,
+            device=self.device,
         )
         if isinstance(labels, tuple):
             labels = labels[0]
