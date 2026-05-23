@@ -1,8 +1,11 @@
 import torch
+import torch.multiprocessing as mp
 from torch.utils.data import DataLoader
 from contextlib import nullcontext
 from pathlib import Path
 from tqdm import tqdm
+
+mp.set_start_method("spawn", force=True)
 
 from lkcellpose.cfg import get_cfg, DEFAULT_CFG_PATH
 from lkcellpose.utils import LOGGER

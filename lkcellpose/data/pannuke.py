@@ -113,7 +113,7 @@ class PanNukeDataset(Dataset):
 
         cache_result = cache_flows(
             self.cache_dir, sample["idx"], sample["fold"],
-            labels, categories, device=self.device
+            labels, categories, device=torch.device("cpu")
         )
         flows = cache_result["flows"]
         class_map = cache_result["class_map"]
