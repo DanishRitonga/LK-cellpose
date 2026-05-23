@@ -24,15 +24,16 @@ def compute_masks(flows, cellprob, cellprob_threshold=0.0,
         device = torch.device("cpu")
     elif isinstance(device, str):
         device = torch.device(device)
-    result = dynamics.compute_masks(
-        flows,
-        cellprob,
-        cellprob_threshold=cellprob_threshold,
-        flow_threshold=flow_threshold,
-        min_size=min_size,
-        niter=niter,
-        device=device,
-    )
+    with torch.sparse.check_sparse_tensor_invariants(enable=True):
+        result = dynamics.compute_masks(
+            flows,
+            cellprob,
+            cellprob_threshold=cellprob_threshold,
+            flow_threshold=flow_threshold,
+            min_size=min_size,
+            niter=niter,
+            device=device,
+        )
     if isinstance(result, tuple):
         mask = result[0]
     else:
