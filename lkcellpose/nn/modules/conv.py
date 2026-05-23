@@ -63,3 +63,65 @@ class ConvBlock(nn.Module):
             h = h + s
         h = self.conv2(h)
         return h + self.shortcut(x)
+
+
+_BN_KW = dict(eps=1e-5, momentum=0.05)
+
+
+class PreActConv(nn.Module):
+    """BN -> ReLU -> Conv (pre-activation, matching Cellpose's batchconv)."""
+
+    def __init__(self, in_ch, out_ch, k=3):
+        super().__init__()
+        self.bn = nn.BatchNorm2d(in_ch, **_BN_KW)
+        self.act = nn.ReLU(inplace=True)
+        self.conv = nn.Conv2d(in_ch, out_ch, k, padding=k // 2)
+
+    def forward(self, x):
+        return self.conv(self.act(self.bn(x)))
+
+
+class StyleConv(nn.Module):
+    """Add skip + style, then BN -> ReLU -> Conv (matching Cellpose's batchconvstyle)."""
+
+    def __init__(self, in_ch, out_ch, style_ch, k=3):
+        super().__init__()
+        self.bn = nn.BatchNorm2d(in_ch, **_BN_KW)
+        self.act = nn.ReLU(inplace=True)
+        self.conv = nn.Conv2d(in_ch, out_ch, k, padding=k // 2)
+        self.style_proj = nn.Linear(style_ch, in_ch)
+
+    def forward(self, x, style, skip=None):
+        if skip is not None:
+            x = x + skip
+        s = self.style_proj(style).unsqueeze(-1).unsqueeze(-1)
+        x = x + s
+        return self.conv(self.act(self.bn(x)))
+
+
+class ResUpBlock(nn.Module):
+    """Decoder residual block matching Cellpose's resup.
+
+    2 residual pairs with style conditioning:
+      pair 1: proj(x) + conv1(style, conv0(x), skip=y)
+      pair 2: x    + conv3(style, conv2(style, x))
+    """
+
+    def __init__(self, in_ch, out_ch, style_ch, k=3):
+        super().__init__()
+        self.proj = nn.Sequential(
+            nn.BatchNorm2d(in_ch, **_BN_KW),
+            nn.Conv2d(in_ch, out_ch, 1),
+        )
+        self.conv0 = PreActConv(in_ch, out_ch, k)
+        self.conv1 = StyleConv(out_ch, out_ch, style_ch, k)
+        self.conv2 = StyleConv(out_ch, out_ch, style_ch, k)
+        self.conv3 = StyleConv(out_ch, out_ch, style_ch, k)
+
+    def forward(self, x, style, skip=None):
+        h = self.conv1(self.conv0(x), style, skip=skip)
+        x = self.proj(x) + h
+        h = self.conv2(x, style)
+        h = self.conv3(h, style)
+        x = x + h
+        return x

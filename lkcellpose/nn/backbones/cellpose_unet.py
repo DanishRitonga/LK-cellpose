@@ -2,39 +2,49 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from lkcellpose.nn.modules.conv import PreActConv
 
-class ResidualBlock(nn.Module):
-    def __init__(self, channels, kernel_size=3):
+_BN_KW = dict(eps=1e-5, momentum=0.05)
+
+
+class ResDownBlock(nn.Module):
+    """Encoder residual block matching Cellpose's resdown.
+
+    2 residual pairs with pre-activation (BN->ReLU->Conv):
+      pair 1: proj(x) + conv1(conv0(x))
+      pair 2: x       + conv3(conv2(x))
+    """
+
+    def __init__(self, in_ch, out_ch, k=3):
         super().__init__()
-        pad = kernel_size // 2
-        self.block = nn.Sequential(
-            nn.Conv2d(channels, channels, kernel_size, padding=pad, bias=False),
-            nn.BatchNorm2d(channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(channels, channels, kernel_size, padding=pad, bias=False),
-            nn.BatchNorm2d(channels),
+        self.proj = nn.Sequential(
+            nn.BatchNorm2d(in_ch, **_BN_KW),
+            nn.Conv2d(in_ch, out_ch, 1),
         )
-        self.relu = nn.ReLU(inplace=True)
+        self.conv0 = PreActConv(in_ch, out_ch, k)
+        self.conv1 = PreActConv(out_ch, out_ch, k)
+        self.conv2 = PreActConv(out_ch, out_ch, k)
+        self.conv3 = PreActConv(out_ch, out_ch, k)
 
     def forward(self, x):
-        return self.relu(x + self.block(x))
+        x = self.proj(x) + self.conv1(self.conv0(x))
+        x = x + self.conv3(self.conv2(x))
+        return x
 
 
 class CellposeUNetEncoder(nn.Module):
     """Encoder from the original Cellpose Residual U-Net (v1-v3).
 
-    Re-implementation of the residual-block encoder adapted for our
-    framework: uses a stride-4 stem to produce features at reductions
-    [4, 8, 16, 32], matching ConvNeXt/UniRepLKNet output spacing so
-    the same UNetDecoder can be attached for fair comparison.
-
-    The residual blocks (2x Conv+BN+ReLU with skip connection) are
-    faithful to the original Cellpose architecture.
+    Faithful re-implementation using Cellpose's resdown blocks
+    (pre-activation BN->ReLU->Conv, 4 convs per stage, 2 residual pairs)
+    adapted for our framework with a stride-4 stem to produce features
+    at reductions [4, 8, 16, 32], matching ConvNeXt/UniRepLKNet output
+    spacing so the same UNetDecoder can be attached for fair comparison.
 
     Reference: Stringer et al., Nature Methods 2021.
     """
 
-    def __init__(self, in_chans=3, nbase=None, n_blocks_per_stage=2):
+    def __init__(self, in_chans=3, nbase=None):
         super().__init__()
         if nbase is None:
             nbase = [64, 128, 256, 512]
@@ -42,31 +52,18 @@ class CellposeUNetEncoder(nn.Module):
 
         self.stem = nn.Sequential(
             nn.Conv2d(in_chans, nbase[0], 4, stride=4, padding=0, bias=False),
-            nn.BatchNorm2d(nbase[0]),
+            nn.BatchNorm2d(nbase[0], **_BN_KW),
             nn.ReLU(inplace=True),
         )
 
-        self.transitions = nn.ModuleList()
         self.stages = nn.ModuleList()
         self.norms = nn.ModuleList()
 
         for i in range(4):
             in_ch = nbase[i - 1] if i > 0 else nbase[0]
             out_ch = nbase[i]
-            if in_ch != out_ch:
-                self.transitions.append(nn.Sequential(
-                    nn.Conv2d(in_ch, out_ch, 1, bias=False),
-                    nn.BatchNorm2d(out_ch),
-                    nn.ReLU(inplace=True),
-                ))
-            else:
-                self.transitions.append(nn.Identity())
-
-            stage = nn.Sequential(
-                *[ResidualBlock(out_ch) for _ in range(n_blocks_per_stage)]
-            )
-            self.stages.append(stage)
-            self.norms.append(nn.BatchNorm2d(out_ch))
+            self.stages.append(ResDownBlock(in_ch, out_ch))
+            self.norms.append(nn.BatchNorm2d(out_ch, **_BN_KW))
 
     def forward(self, x):
         x = self.stem(x)
@@ -74,7 +71,6 @@ class CellposeUNetEncoder(nn.Module):
         for i in range(4):
             if i > 0:
                 x = F.max_pool2d(x, 2, 2)
-            x = self.transitions[i](x)
             x = self.stages[i](x)
             features.append(self.norms[i](x))
         return features
