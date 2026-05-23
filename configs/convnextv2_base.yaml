@@ -1,0 +1,37 @@
+# ConvNeXt V2 Base experiment
+backbone: convnextv2_base
+pretrained: true
+pretrained_tag: fcmae_ft_in22k_in1k
+panoptic: true
+n_classes: 5
+
+epochs: 2000
+batch: 8
+grad_accum_steps: 32
+lr0: 5.0e-5
+weight_decay: 0.1
+warmup_epochs: 10
+lr_decay_milestones: [-100, -50]
+lr_decay_factor: 10
+
+grad_checkpoint: true
+amp: true
+amp_dtype: bfloat16
+
+flow_weight: 5.0
+cellprob_weight: 1.0
+class_weight: 1.0
+focal_gamma: 2.0
+focal_alpha: auto
+
+dataset: pannuke
+train_folds: [1]
+val_folds: [2]
+test_folds: [3]
+cache_flows: true
+
+augment: true
+scale_range: [0.25, 4.0]
+
+project: runs
+name: convnextv2_base

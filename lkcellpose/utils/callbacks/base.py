@@ -1,0 +1,18 @@
+default_callbacks = {
+    "on_train_start": [],
+    "on_train_end": [],
+    "on_train_epoch_start": [],
+    "on_train_epoch_end": [],
+    "on_train_batch_start": [],
+    "on_train_batch_end": [],
+    "on_fit_epoch_end": [],
+    "on_val_start": [],
+    "on_val_end": [],
+    "on_val_batch_start": [],
+    "on_val_batch_end": [],
+    "on_predict_start": [],
+    "on_predict_end": [],
+    "on_predict_batch_start": [],
+    "on_predict_batch_end": [],
+    "on_save_checkpoint": [],
+}
