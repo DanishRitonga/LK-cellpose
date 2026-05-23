@@ -11,7 +11,10 @@ DEFAULT_CFG_PATH = Path(__file__).parent / "default.yaml"
 
 def cfg2dict(cfg: str | Path | dict | SimpleNamespace) -> dict:
     if isinstance(cfg, (str, Path)):
-        cfg = yaml.safe_load(Path(cfg).read_text())
+        p = Path(cfg)
+        if not p.suffix:
+            p = Path(__file__).parent / f"{cfg}.yaml"
+        cfg = yaml.safe_load(p.read_text())
     elif isinstance(cfg, SimpleNamespace):
         cfg = vars(cfg)
     return cfg
