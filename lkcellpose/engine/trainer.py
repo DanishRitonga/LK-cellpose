@@ -26,7 +26,7 @@ class BaseTrainer:
         self.batch_size = self.args.get("batch", 8)
         self.epochs = self.args.get("epochs", 2000)
         self.start_epoch = 0
-        self.best_metric = float("inf")
+        self.best_metric = float("-inf")
         self.global_step = 0
         self.loss = 0.0
         self.loss_items = None
