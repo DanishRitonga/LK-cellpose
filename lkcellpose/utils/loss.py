@@ -39,8 +39,8 @@ class PanopticLoss(nn.Module):
         gt_flow = batch["flows"][:, :2]
         cell_mask = (batch["cellprob"] > 0.5).float()
 
-        flow_loss = F.mse_loss(pred_flow, gt_flow * self.flow_weight, reduction='none')
-        flow_loss = (flow_loss * cell_mask.unsqueeze(1)).sum() / (cell_mask.sum() * 2 + 1e-8)
+        flow_loss = F.mse_loss(pred_flow, gt_flow, reduction='none')
+        flow_loss = (flow_loss * cell_mask.unsqueeze(1)).sum() / (cell_mask.sum() * 2 + 1e-8) * self.flow_weight
 
         pred_cellprob = preds[:, 2]
         gt_cellprob = batch["cellprob"]

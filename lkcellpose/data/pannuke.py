@@ -156,10 +156,12 @@ class PanNukeDataset(Dataset):
         flows_t = torch.from_numpy(data["flows"]).float()
         class_map_t = torch.from_numpy(data["class_map"]).long()
         labels_t = torch.from_numpy(data["labels"]).long()
+        cellprob_t = flows_t[2] if flows_t.shape[0] > 2 else torch.zeros(flows_t.shape[1:], dtype=torch.float32)
 
         return {
             "img": img_t,
-            "flows": flows_t,
+            "flows": flows_t[:2],
+            "cellprob": cellprob_t,
             "class_map": class_map_t,
             "labels": labels_t,
             "idx": idx,
