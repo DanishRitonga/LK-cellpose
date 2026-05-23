@@ -31,13 +31,19 @@ class CellposeAugment:
 
         if self.rotation:
             k = random.randint(0, 3)
-            img = np.rot90(img, k)
-            for key in spatial_keys_3d:
-                if key in sample:
-                    sample[key] = np.rot90(sample[key], k, axes=(1, 2))
-            for key in spatial_keys_2d:
-                if key in sample:
-                    sample[key] = np.rot90(sample[key], k, axes=(0, 1))
+            if k > 0:
+                img = np.rot90(img, k)
+                for key in spatial_keys_2d:
+                    if key in sample:
+                        sample[key] = np.rot90(sample[key], k, axes=(0, 1))
+                if "flows" in sample:
+                    flows = np.rot90(sample["flows"], k, axes=(1, 2))
+                    for _ in range(k):
+                        y_flow = flows[0].copy()
+                        x_flow = flows[1].copy()
+                        flows[0] = -x_flow
+                        flows[1] = y_flow
+                    sample["flows"] = flows
 
         if self.hflip and random.random() < 0.5:
             if img.ndim == 3:

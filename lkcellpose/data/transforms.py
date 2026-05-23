@@ -11,7 +11,7 @@ def labels_to_flows(labels: np.ndarray, device=None) -> np.ndarray:
         labels: (H, W) integer array, 0=background, 1,2,...=instance IDs
 
     Returns:
-        flows: (4, H, W) float32 array [Y-flow, X-flow, cellprob, label_mask]
+        flows: (3, H, W) float32 array [Y-flow, X-flow, cellprob]
     """
     from cellpose import dynamics
     if device is None:
@@ -19,13 +19,22 @@ def labels_to_flows(labels: np.ndarray, device=None) -> np.ndarray:
     elif isinstance(device, str):
         device = torch.device(device)
     result = dynamics.labels_to_flows([labels], device=device)
-    flows = result[0]
-    if isinstance(flows, torch.Tensor):
-        flows = flows.cpu().numpy()
-    if flows.ndim == 3 and flows.shape[0] == 3:
+    raw = result[0]
+    if isinstance(raw, torch.Tensor):
+        raw = raw.cpu().numpy()
+    raw = raw.astype(np.float32)
+    if raw.shape[0] == 4:
+        y_flow = raw[2]
+        x_flow = raw[3]
+        cellprob = raw[1]
+    elif raw.shape[0] == 3:
+        y_flow = raw[0]
+        x_flow = raw[1]
         cellprob = (labels > 0).astype(np.float32)
-        flows = np.concatenate([flows, cellprob[np.newaxis]], axis=0)
-    return flows.astype(np.float32)
+    else:
+        raise ValueError(f"Unexpected flow shape: {raw.shape}")
+    flows = np.stack([y_flow, x_flow, cellprob], axis=0)
+    return flows
 
 
 def compute_class_map(labels: np.ndarray, categories: list[int], n_classes: int = 5) -> np.ndarray:
