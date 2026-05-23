@@ -20,7 +20,7 @@ cache/
 # Data
 *.npy
 *.npz
-data/
+/data/
 
 # IDE
 .vscode/
