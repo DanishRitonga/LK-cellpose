@@ -75,7 +75,7 @@ class PanopticLoss(nn.Module):
         logits_valid = logits_flat[valid]
         targets_valid = targets_flat[valid]
 
-        ce = F.cross_entropy(logits_valid, targets_valid, reduction='none')
+        ce = F.cross_entropy(logits_valid, targets_valid.long(), reduction='none')
         pt = torch.exp(-ce)
 
         focal_weight = (1 - pt) ** self.focal_gamma

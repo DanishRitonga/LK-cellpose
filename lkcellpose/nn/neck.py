@@ -4,36 +4,40 @@ from lkcellpose.nn.modules.conv import Conv, ConvTranspose2x, ConvBlock
 
 
 class UNetUpBlock(nn.Module):
-    """Upsample + concat skip + 2x ConvBlock."""
     def __init__(self, in_ch, skip_ch, out_ch, use_skip=True):
         super().__init__()
         self.use_skip = use_skip
         self.up = ConvTranspose2x(in_ch, out_ch)
-        cat_ch = out_ch + (skip_ch if use_skip else 0)
-        self.conv = ConvBlock(cat_ch, out_ch)
+        if use_skip and skip_ch is not None and skip_ch > 0:
+            self.skip_proj = (
+                nn.Identity() if skip_ch == out_ch
+                else nn.Sequential(
+                    nn.Conv2d(skip_ch, out_ch, 1, bias=False),
+                    nn.BatchNorm2d(out_ch),
+                )
+            )
+        else:
+            self.skip_proj = None
+        self.conv = ConvBlock(out_ch, out_ch)
 
     def forward(self, x, skip=None):
         x = self.up(x)
-        if self.use_skip and skip is not None:
-            x = torch.cat([x, skip], dim=1)
-        elif not self.use_skip:
-            pass
+        if self.skip_proj is not None and skip is not None:
+            x = x + self.skip_proj(skip)
         return self.conv(x)
 
 
 class UNetDecoder(nn.Module):
     """
-    Hierarchical U-Net decoder with skip connections.
+    Hierarchical U-Net decoder with addition-based skip connections.
+    
+    Follows Cellpose's design: skip connections use element-wise addition
+    (not concatenation), matching the original Cellpose U-Net where
+    `self.concatenation = False` and encoder features are added to
+    decoder features via `x = x + y`.
     
     Takes encoder features [f0, f1, f2, f3] at reductions [4, 8, 16, 32]
     and produces a feature map at full input resolution.
-    
-    For ConvNeXt V2 Base (encoder_channels=[128, 256, 512, 1024]):
-      Stage 3→2: upsample f3 (1024@8x8) → cat f2 (512@16x16) → 512@16x16
-      Stage 2→1: upsample (512@16x16) → cat f1 (256@32x32) → 256@32x32
-      Stage 1→0: upsample (256@32x32) → cat f0 (128@64x64) → 128@64x64
-      Stage 0→up: upsample (128@64x64) → 64@128x128
-      Final up: upsample (64@128x128) → 32@256x256
     
     Args:
         encoder_channels: list of 4 ints, feature channels at each encoder stage
