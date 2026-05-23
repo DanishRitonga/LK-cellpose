@@ -12,8 +12,8 @@ def on_train_batch_end(trainer):
         return
     trainer.writer.add_scalar("train/loss", trainer.loss, trainer.global_step)
     if hasattr(trainer, "loss_items") and trainer.loss_items is not None:
-        for i, v in enumerate(trainer.loss_items):
-            trainer.writer.add_scalar(f"train/loss_item_{i}", v, trainer.global_step)
+        for k, v in trainer.loss_items.items():
+            trainer.writer.add_scalar(f"train/{k}", v, trainer.global_step)
     lr = trainer.optimizer.param_groups[0]["lr"]
     trainer.writer.add_scalar("train/lr", lr, trainer.global_step)
 
