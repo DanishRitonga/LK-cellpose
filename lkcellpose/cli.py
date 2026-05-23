@@ -1,5 +1,8 @@
 import argparse
 import sys
+import warnings
+
+warnings.filterwarnings("ignore", message="Importing from timm.models.* is deprecated")
 
 from lkcellpose import LKCellposeModel, __version__
 
