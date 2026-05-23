@@ -52,8 +52,10 @@ class PanNukeDataset(Dataset):
 
     def _load_from_huggingface(self, fold):
         from datasets import load_dataset
+        LOGGER.info(f"Loading PanNuke fold {fold} from HuggingFace...")
         dataset = load_dataset("RationAI/PanNuke", split=f"fold{fold}")
-        for idx, sample in enumerate(dataset):
+        LOGGER.info(f"Filtering samples (min_masks={self.min_masks})...")
+        for idx, sample in enumerate(tqdm(dataset, desc="Loading samples", unit="img")):
             n_masks = len(sample["categories"])
             if n_masks < self.min_masks:
                 continue
@@ -69,9 +71,10 @@ class PanNukeDataset(Dataset):
     def _load_from_npy(self, data_dir, fold):
         import numpy as np
         data_dir = Path(data_dir)
+        LOGGER.info(f"Loading PanNuke fold {fold} from {data_dir}...")
         images = np.load(data_dir / f"fold{fold}" / "images" / f"fold{fold}" / "images.npy", mmap_mode="r")
         masks = np.load(data_dir / f"fold{fold}" / "masks" / f"fold{fold}" / "masks.npy", mmap_mode="r")
-        for idx in range(images.shape[0]):
+        for idx in tqdm(range(images.shape[0]), desc="Loading samples", unit="img"):
             instance_map = np.zeros(images.shape[1:3], dtype=np.int32)
             categories = []
             counter = 1
@@ -152,10 +155,10 @@ class PanNukeDataset(Dataset):
         if self.augment is not None:
             data = self.augment(data)
 
-        img_t = torch.from_numpy(data["img"]).permute(2, 0, 1).float()
-        flows_t = torch.from_numpy(data["flows"]).float()
-        class_map_t = torch.from_numpy(data["class_map"]).long()
-        labels_t = torch.from_numpy(data["labels"]).long()
+        img_t = torch.from_numpy(data["img"].copy()).permute(2, 0, 1).float()
+        flows_t = torch.from_numpy(data["flows"].copy()).float()
+        class_map_t = torch.from_numpy(data["class_map"].copy()).long()
+        labels_t = torch.from_numpy(data["labels"].copy()).long()
         cellprob_t = flows_t[2] if flows_t.shape[0] > 2 else torch.zeros(flows_t.shape[1:], dtype=torch.float32)
 
         return {
