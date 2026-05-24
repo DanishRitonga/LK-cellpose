@@ -100,13 +100,17 @@ class BasePredictor:
         from cellpose import dynamics
         flow_y = pred[0]
         flow_x = pred[1]
-        cellprob = pred[2]
+        cellprob_logits = pred[2]
 
+        # Pass raw network output (magnitude ~5) directly to compute_masks.
+        # compute_masks divides by 5 internally before Euler integration.
         flow = np.stack([flow_y, flow_x], axis=0)
-        cellprob_mask = 1.0 / (1.0 + np.exp(-cellprob)) > self.cellprob_threshold
+        # Pass float cellprob probability, not boolean mask.
+        # compute_masks uses it internally: cellprob > cellprob_threshold
+        cellprob = 1.0 / (1.0 + np.exp(-cellprob_logits))
 
         labels = dynamics.compute_masks(
-            flow, cellprob_mask,
+            flow, cellprob,
             flow_threshold=self.flow_threshold,
             min_size=self.min_size,
             niter=self.niter,

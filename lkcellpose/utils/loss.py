@@ -7,6 +7,11 @@ class PanopticLoss(nn.Module):
     """
     Combined loss for panoptic Cellpose: flow MSE + cellprob BCE + class focal loss.
     
+    Matches Cellpose v4 training loss exactly:
+      - Flow loss:  MSE(pred_flow, 5 * gt_flow) / 2    (GT flows scaled by 5, divided by 2)
+      - Cellprob loss: BCEWithLogitsLoss (no pos_weight, no class weighting)
+      - Class loss: focal loss (panoptic mode only)
+    
     Output tensor layout: (B, 8, H, W)
       [0] = Y-flow
       [1] = X-flow
@@ -14,22 +19,24 @@ class PanopticLoss(nn.Module):
       [3:8] = class logits (5 classes)
     
     Targets:
-      flows[0:2] = ground-truth Y/X flow
+      flows[0:2] = ground-truth Y/X flow (unit vectors, magnitude ~1 on fg, 0 on bg)
       flows[2] = cell probability (0 or 1)
       class_map = per-pixel class label (0-4), 255=ignore
     """
 
-    def __init__(self, flow_weight=5.0, cellprob_weight=1.0, class_weight=1.0,
-                 focal_gamma=2.0, focal_alpha=None, n_classes=5, panoptic=True,
-                 cellprob_pos_weight=3.0):
+    # Cellpose v4 scales GT flows by 5 in the loss so the network learns
+    # to output magnitude-~5 flows, matching what compute_masks expects
+    # (it divides by 5 internally before Euler integration).
+    FLOW_SCALE = 5.0
+
+    def __init__(self, cellprob_weight=1.0, class_weight=1.0,
+                 focal_gamma=2.0, focal_alpha=None, n_classes=5, panoptic=True):
         super().__init__()
-        self.flow_weight = flow_weight
         self.cellprob_weight = cellprob_weight
         self.class_weight = class_weight
         self.focal_gamma = focal_gamma
         self.panoptic = panoptic
         self.n_classes = n_classes
-        self.cellprob_pos_weight = cellprob_pos_weight
 
         if focal_alpha is not None and focal_alpha != "auto":
             self.register_buffer("focal_alpha", torch.tensor(focal_alpha, dtype=torch.float32))
@@ -37,19 +44,18 @@ class PanopticLoss(nn.Module):
             self.focal_alpha = None
 
     def forward(self, preds, batch):
+        # --- Flow loss (matching cellpose v4 exactly) ---
+        # Cellpose: veci = 5. * lbl[:,-2:];  loss = MSE(y[:,-3:-1], veci) / 2.
+        # MSE over ALL pixels (including background, which has zero-flow targets)
+        # to force the network to predict zero flow for background pixels.
         pred_flow = preds[:, :2]
-        gt_flow = batch["flows"][:, :2]
-        cell_mask = (batch["cellprob"] > 0.5).float()
+        gt_flow_scaled = batch["flows"][:, :2] * self.FLOW_SCALE
+        flow_loss = F.mse_loss(pred_flow, gt_flow_scaled, reduction="mean") / 2.0
 
-        flow_loss = F.mse_loss(pred_flow, gt_flow, reduction='none')
-        flow_loss = (flow_loss * cell_mask.unsqueeze(1)).sum() / (cell_mask.sum() * 2 + 1e-8) * self.flow_weight
-
+        # --- Cellprob loss (matching cellpose v4: no pos_weight) ---
         pred_cellprob = preds[:, 2]
         gt_cellprob = batch["cellprob"]
-        cellprob_loss = F.binary_cross_entropy_with_logits(
-            pred_cellprob, gt_cellprob,
-            pos_weight=torch.tensor(self.cellprob_pos_weight, device=pred_cellprob.device),
-        )
+        cellprob_loss = F.binary_cross_entropy_with_logits(pred_cellprob, gt_cellprob)
 
         total_loss = flow_loss + self.cellprob_weight * cellprob_loss
         loss_items = {

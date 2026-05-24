@@ -37,12 +37,12 @@ class PanopticTrainer(BaseTrainer):
         folds_key = f"{split}_folds"
         folds = self.args.get(folds_key, [1] if split == "train" else [2])
         augment = CellposeAugment(
-            scale_range=self.args.get("scale_range", (0.25, 4.0)),
+            scale_range=self.args.get("scale_range", 0.5),
             grayscale_prob=self.args.get("grayscale_prob", 0.1),
             invert_prob=self.args.get("invert_prob", 0.25),
             channel_dropout_prob=self.args.get("channel_dropout_prob", 0.1),
             brightness_std=self.args.get("brightness_std", 0.2),
-            contrast_range=self.args.get("contrast_range", (-2.0, 2.0)),
+            contrast_range=self.args.get("contrast_range", (0.5, 1.5)),
             degradation_prob=self.args.get("degradation_prob", 0.5),
             hflip=self.args.get("hflip", True),
             vflip=self.args.get("vflip", True),

@@ -95,7 +95,6 @@ class PanopticCellposeModel(BaseModel):
     def init_criterion(self):
         from lkcellpose.utils.loss import PanopticLoss
         return PanopticLoss(
-            flow_weight=self._args.get("flow_weight", 5.0),
             cellprob_weight=self._args.get("cellprob_weight", 1.0),
             class_weight=self._args.get("class_weight", 1.0),
             focal_gamma=self._args.get("focal_gamma", 2.0),
@@ -167,7 +166,6 @@ class CellposeSAMModel(BaseModel):
     def init_criterion(self):
         from lkcellpose.utils.loss import PanopticLoss
         return PanopticLoss(
-            flow_weight=self._args.get("flow_weight", 5.0),
             cellprob_weight=self._args.get("cellprob_weight", 1.0),
             class_weight=self._args.get("class_weight", 1.0),
             focal_gamma=self._args.get("focal_gamma", 2.0),

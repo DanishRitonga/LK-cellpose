@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from contextlib import nullcontext
@@ -54,12 +55,10 @@ class BaseTrainer:
         self.model = self.get_model()
         self.model.to(self.device)
         self.model.set_model_args(**{k: v for k, v in vars(self.args).items()
-                                     if k in ("flow_weight", "cellprob_weight", "class_weight",
+                                     if k in ("cellprob_weight", "class_weight",
                                               "focal_gamma", "focal_alpha")})
         self.optimizer = self.build_optimizer()
         self.scheduler = self.build_scheduler()
-        for pg in self.optimizer.param_groups:
-            pg["lr"] = 0.0
         self.train_loader = self.get_dataloader("train")
         self.val_loader = self.get_dataloader("val")
         self.scaler = None
@@ -140,9 +139,9 @@ class BaseTrainer:
         torch.save(ckpt, self.wdir / f"{name}.pt")
 
     def build_optimizer(self):
-        lr = self.args.get("lr0", 0.1)
-        wd = self.args.get("weight_decay", 1e-5)
-        name = self.args.get("optimizer", "sgd").lower()
+        lr = self.args.get("lr0", 1e-5)
+        wd = self.args.get("weight_decay", 0.1)
+        name = self.args.get("optimizer", "adamw").lower()
         if name == "sgd":
             momentum = self.args.get("momentum", 0.9)
             return torch.optim.SGD(self.model.parameters(), lr=lr, momentum=momentum, weight_decay=wd)
@@ -151,13 +150,10 @@ class BaseTrainer:
 
     def build_scheduler(self):
         warmup = self.args.get("warmup_epochs", 10)
-        return LRWarmupCosineScheduler(
+        return LRStepDecayScheduler(
             self.optimizer,
             warmup_epochs=warmup,
             total_epochs=self.epochs,
-            lr_decay_milestones=self.args.get("lr_decay_milestones", [-100, -50]),
-            lr_decay_factor=self.args.get("lr_decay_factor", 10),
-            min_lr_ratio=self.args.get("min_lr_ratio", 0.01),
         )
 
     def preprocess_batch(self, batch):
@@ -187,34 +183,58 @@ class BaseTrainer:
 import math
 
 
-class LRWarmupCosineScheduler:
-    def __init__(self, optimizer, warmup_epochs=10, total_epochs=2000,
-                 lr_decay_milestones=None, lr_decay_factor=10,
-                 min_lr_ratio=0.01):
+class LRStepDecayScheduler:
+    """LR schedule matching Cellpose v4: linear warmup then step decay.
+
+    Cellpose v4 schedule (from cellpose/train.py):
+      - Linear warmup from 0 → lr over `warmup_epochs` epochs
+      - Constant lr until late decay:
+          if total_epochs > 300:  halve lr every 10 epochs starting at epoch (total-100)
+          if total_epochs > 99:  halve lr every 5 epochs starting at epoch (total-50)
+      - If total_epochs <= 99: constant lr after warmup
+    """
+
+    def __init__(self, optimizer, warmup_epochs=10, total_epochs=2000):
         self.optimizer = optimizer
         self.warmup_epochs = warmup_epochs
         self.total_epochs = total_epochs
-        self.lr_decay_milestones = lr_decay_milestones or []
-        self.lr_decay_factor = lr_decay_factor
         self.base_lr = optimizer.param_groups[0]["lr"]
-        self.min_lr = self.base_lr * min_lr_ratio
         self.current_lr = 0.0
         self.epoch = -1
+        # Pre-compute full LR schedule to match cellpose exactly
+        self._lr_schedule = self._build_schedule()
+
+    def _build_schedule(self):
+        """Build LR array matching cellpose v4 logic."""
+        n = self.total_epochs
+        lr = self.base_lr
+        # Linear warmup
+        schedule = np.linspace(0, lr, self.warmup_epochs).tolist()
+        # Constant
+        schedule.extend([lr] * max(0, n - self.warmup_epochs))
+        # Late step-decay (matches cellpose/train.py lines 406-415)
+        if n > 300:
+            schedule = schedule[: n - 100]
+            current = schedule[-1] if schedule else lr
+            for _ in range(10):
+                current = current / 2
+                schedule.extend([current] * 10)
+            schedule = schedule[:n]
+        elif n > 99:
+            schedule = schedule[: n - 50]
+            current = schedule[-1] if schedule else lr
+            for _ in range(10):
+                current = current / 2
+                schedule.extend([current] * 5)
+            schedule = schedule[:n]
+        return schedule
 
     def step(self, epoch=None):
         if epoch is not None:
             self.epoch = epoch
         else:
             self.epoch += 1
-        if self.epoch < self.warmup_epochs:
-            self.current_lr = self.base_lr * (self.epoch + 1) / self.warmup_epochs
-        else:
-            progress = (self.epoch - self.warmup_epochs) / max(1, self.total_epochs - self.warmup_epochs)
-            cosine_lr = self.min_lr + 0.5 * (self.base_lr - self.min_lr) * (1 + math.cos(math.pi * min(progress, 1.0)))
-            self.current_lr = cosine_lr
-            for milestone in self.lr_decay_milestones:
-                abs_milestone = self.total_epochs + milestone if milestone < 0 else milestone
-                if self.epoch >= abs_milestone:
-                    self.current_lr = self.min_lr
+        idx = min(self.epoch, len(self._lr_schedule) - 1)
+        self.current_lr = self._lr_schedule[idx]
         for pg in self.optimizer.param_groups:
             pg["lr"] = self.current_lr

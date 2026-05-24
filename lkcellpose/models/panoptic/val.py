@@ -31,22 +31,17 @@ class PanopticValidator(BaseValidator):
         for b in range(preds.shape[0]):
             p = preds_float[b].cpu().numpy()
             flow_y, flow_x = p[0], p[1]
+            # Convert logits to float probability (0-1)
             cellprob = 1.0 / (1.0 + np.exp(-p[2]))
             cellprob_threshold = self.args.get("cellprob_threshold", 0.0) if hasattr(self.args, "get") else 0.0
             flow_threshold = self.args.get("flow_threshold", 0.4) if hasattr(self.args, "get") else 0.4
             min_size = self.args.get("min_size", 15) if hasattr(self.args, "get") else 15
 
-            # Normalize flows to unit vectors (Cellpose convention)
-            flow_mag = np.sqrt(flow_y**2 + flow_x**2)
-            flow_mag_safe = np.maximum(flow_mag, 1e-8)
-            flow_y_norm = flow_y / flow_mag_safe
-            flow_x_norm = flow_x / flow_mag_safe
-            # Zero out background flows
-            bg_mask = cellprob < cellprob_threshold
-            flow_y_norm[bg_mask] = 0.0
-            flow_x_norm[bg_mask] = 0.0
+            # Pass raw network output directly to compute_masks
+            # (no normalization, no /5) — the network learns to output
+            # magnitude-~5 flows, and compute_masks divides by 5 internally.
+            flows = np.stack([flow_y, flow_x], axis=0)
 
-            flows = np.stack([flow_y_norm, flow_x_norm], axis=0)
             pred_labels = compute_masks(flows, cellprob,
                                         cellprob_threshold=cellprob_threshold,
                                         flow_threshold=flow_threshold,
@@ -65,8 +60,8 @@ class PanopticValidator(BaseValidator):
             self._n_pred_total += n_pred
             self._n_gt_total += n_gt
             self._n_samples += 1
-            flow_mag = np.sqrt(p[0]**2 + p[1]**2)
-            self._flow_mag_sum += flow_mag.mean()
+            flow_mag_raw = np.sqrt(p[0]**2 + p[1]**2)
+            self._flow_mag_sum += flow_mag_raw.mean()
             self._cellprob_pos_sum += (cellprob > 0.5).sum()
 
             if p.shape[0] > 3:
@@ -136,4 +131,4 @@ class PanopticValidator(BaseValidator):
             LOGGER.info(f"  Avg instances/sample: pred={avg_pred:.1f}, gt={avg_gt:.1f}")
             avg_flow_mag = self._flow_mag_sum / self._n_samples
             avg_cellprob_pos = self._cellprob_pos_sum / (self._n_samples * 256 * 256) * 100
-            LOGGER.info(f"  Avg flow magnitude: {avg_flow_mag:.3f}, cellprob>0.5: {avg_cellprob_pos:.1f}%")
+            LOGGER.info(f"  Avg raw flow magnitude: {avg_flow_mag:.3f} (expect ~5.0), cellprob>0.5: {avg_cellprob_pos:.1f}%")
