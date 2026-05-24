@@ -23,14 +23,14 @@ panoptic: true
 epochs: 2000
 batch: 8
 lr0: 0.1
-weight_decay: 1.0e-5
+weight_decay: 0.0
 optimizer: sgd
 warmup_epochs: 10
 lr_decay_milestones: [-100, -50]
 lr_decay_factor: 10
 min_lr_ratio: 0.01
 momentum: 0.9
-grad_accum_steps: 32
+grad_accum_steps: 8
 amp: true
 amp_dtype: bfloat16
 seed: 0
