@@ -4,6 +4,7 @@ from lkcellpose.engine.validator import BaseValidator
 from lkcellpose.utils.metrics import PanopticQuality
 from lkcellpose.utils import LOGGER, NUCLEUS_CLASSES
 from lkcellpose.dynamics import compute_masks
+from lkcellpose.data.pannuke import PanNukeDataset
 
 
 class PanopticValidator(BaseValidator):
@@ -70,6 +71,35 @@ class PanopticValidator(BaseValidator):
         if self.pq_metric is not None:
             return self.pq_metric.compute()
         return {"bPQ": 0.0, "mPQ": 0.0, "per_class_pq": {}}
+
+    def get_dataloader(self):
+        folds = self.args.get("val_folds", [2]) if hasattr(self.args, "get") else [2]
+        batch_size = self.args.get("batch", 8) if hasattr(self.args, "get") else 8
+        workers = self.args.get("workers", 8) if hasattr(self.args, "get") else 8
+        datasets = []
+        for fold in folds:
+            ds = PanNukeDataset(
+                fold=fold,
+                split="val",
+                data_dir=self.args.get("data_dir") if hasattr(self.args, "get") else None,
+                augment=None,
+                n_classes=self.args.get("n_classes", 5) if hasattr(self.args, "get") else 5,
+                min_masks=self.args.get("min_masks", 5) if hasattr(self.args, "get") else 5,
+                device=None,
+            )
+            datasets.append(ds)
+        if len(datasets) == 1:
+            dataset = datasets[0]
+        else:
+            from torch.utils.data import ConcatDataset
+            dataset = ConcatDataset(datasets)
+        return torch.utils.data.DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=workers,
+            pin_memory=True,
+        )
 
     def print_results(self, results):
         LOGGER.info(f"Validation: bPQ={results.get('bPQ', 0):.4f}, mPQ={results.get('mPQ', 0):.4f}")
