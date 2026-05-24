@@ -23,7 +23,7 @@ panoptic: true
 # Train — matching Cellpose v4 (AdamW, lr=1e-5, wd=0.1)
 epochs: 2000
 batch: 8
-lr0: 1e-5
+lr0: 0.00001
 weight_decay: 0.1
 optimizer: adamw
 warmup_epochs: 10

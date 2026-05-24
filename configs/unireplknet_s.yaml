@@ -7,7 +7,7 @@ n_classes: 5
 epochs: 2000
 batch: 8
 grad_accum_steps: 1
-lr0: 1e-5
+lr0: 0.00001
 weight_decay: 0.1
 warmup_epochs: 10
 

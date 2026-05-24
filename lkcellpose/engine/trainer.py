@@ -139,11 +139,11 @@ class BaseTrainer:
         torch.save(ckpt, self.wdir / f"{name}.pt")
 
     def build_optimizer(self):
-        lr = self.args.get("lr0", 1e-5)
-        wd = self.args.get("weight_decay", 0.1)
+        lr = float(self.args.get("lr0", 1e-5))
+        wd = float(self.args.get("weight_decay", 0.1))
         name = self.args.get("optimizer", "adamw").lower()
         if name == "sgd":
-            momentum = self.args.get("momentum", 0.9)
+            momentum = float(self.args.get("momentum", 0.9))
             return torch.optim.SGD(self.model.parameters(), lr=lr, momentum=momentum, weight_decay=wd)
         else:
             return torch.optim.AdamW(self.model.parameters(), lr=lr, weight_decay=wd)
