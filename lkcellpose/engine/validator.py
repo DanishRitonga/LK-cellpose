@@ -27,7 +27,7 @@ class BaseValidator:
         self.training = trainer is not None
         if self.training:
             self.device = trainer.device
-            model = trainer.ema.ema if trainer.ema else trainer.model
+            model = trainer.model
             self.dataloader = trainer.val_loader
             self.save_dir = trainer.save_dir
         else:

@@ -22,7 +22,7 @@ panoptic: true
 # Train
 epochs: 2000
 batch: 8
-lr0: 5.0e-5
+lr0: 1.0e-3
 weight_decay: 0.1
 optimizer: adamw
 warmup_epochs: 10
@@ -85,4 +85,4 @@ exist_ok: false
 
 # EMA
 ema: true
-ema_decay: 0.9999
+ema_decay: 0.999

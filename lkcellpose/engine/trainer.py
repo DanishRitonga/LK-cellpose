@@ -57,6 +57,8 @@ class BaseTrainer:
                                      if k in ("flow_weight", "cellprob_weight", "class_weight",
                                               "focal_gamma", "focal_alpha")})
         self.optimizer = self.build_optimizer()
+        for pg in self.optimizer.param_groups:
+            pg["lr"] = 0.0
         self.scheduler = self.build_scheduler()
         self.train_loader = self.get_dataloader("train")
         self.val_loader = self.get_dataloader("val")
@@ -66,7 +68,7 @@ class BaseTrainer:
         self.amp_ctx = torch.amp.autocast("cuda", dtype=amp_dtype) if use_amp else nullcontext()
         self.amp_dtype = amp_dtype
         if self.args.get("ema", True):
-            self.ema = ModelEMA(self.model, decay=self.args.get("ema_decay", 0.9999))
+            self.ema = ModelEMA(self.model, decay=self.args.get("ema_decay", 0.999))
         else:
             self.ema = None
         self.early_stopping = EarlyStopping(patience=self.args.get("patience", 100))
@@ -77,6 +79,8 @@ class BaseTrainer:
         grad_accum = self.args.get("grad_accum_steps", 32)
         for epoch in range(self.start_epoch, self.epochs):
             self.epoch = epoch
+            if self.scheduler:
+                self.scheduler.step(epoch)
             self.run_callbacks("on_train_epoch_start")
             self.model.train()
             pbar = tqdm(self.train_loader, desc=f"Epoch {epoch}/{self.epochs}")
@@ -100,8 +104,6 @@ class BaseTrainer:
                 self.global_step += 1
                 pbar.set_postfix(loss=self.loss, lr=self.optimizer.param_groups[0]["lr"])
                 self.run_callbacks("on_train_batch_end")
-            if self.scheduler:
-                self.scheduler.step()
             self.run_callbacks("on_train_epoch_end")
             if (epoch + 1) % self.args.get("val_interval", 1) == 0:
                 metrics = self.validate()
@@ -187,15 +189,18 @@ class LRWarmupCosineScheduler:
         self.base_lr = optimizer.param_groups[0]["lr"]
         self.min_lr = self.base_lr * min_lr_ratio
         self.current_lr = 0.0
-        self.epoch = 0
+        self.epoch = -1
 
-    def step(self):
-        self.epoch += 1
-        if self.epoch <= self.warmup_epochs:
-            self.current_lr = self.base_lr * self.epoch / self.warmup_epochs
+    def step(self, epoch=None):
+        if epoch is not None:
+            self.epoch = epoch
+        else:
+            self.epoch += 1
+        if self.epoch < self.warmup_epochs:
+            self.current_lr = self.base_lr * (self.epoch + 1) / self.warmup_epochs
         else:
             progress = (self.epoch - self.warmup_epochs) / max(1, self.total_epochs - self.warmup_epochs)
-            cosine_lr = self.min_lr + 0.5 * (self.base_lr - self.min_lr) * (1 + math.cos(math.pi * progress))
+            cosine_lr = self.min_lr + 0.5 * (self.base_lr - self.min_lr) * (1 + math.cos(math.pi * min(progress, 1.0)))
             self.current_lr = cosine_lr
             for milestone in self.lr_decay_milestones:
                 abs_milestone = self.total_epochs + milestone if milestone < 0 else milestone
