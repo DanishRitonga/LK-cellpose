@@ -41,6 +41,7 @@ save_period: -1
 # Loss
 flow_weight: 5.0
 cellprob_weight: 1.0
+cellprob_pos_weight: 3.0
 class_weight: 1.0
 focal_gamma: 2.0
 focal_alpha: auto

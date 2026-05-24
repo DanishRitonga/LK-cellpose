@@ -20,7 +20,8 @@ class PanopticLoss(nn.Module):
     """
 
     def __init__(self, flow_weight=5.0, cellprob_weight=1.0, class_weight=1.0,
-                 focal_gamma=2.0, focal_alpha=None, n_classes=5, panoptic=True):
+                 focal_gamma=2.0, focal_alpha=None, n_classes=5, panoptic=True,
+                 cellprob_pos_weight=3.0):
         super().__init__()
         self.flow_weight = flow_weight
         self.cellprob_weight = cellprob_weight
@@ -28,6 +29,7 @@ class PanopticLoss(nn.Module):
         self.focal_gamma = focal_gamma
         self.panoptic = panoptic
         self.n_classes = n_classes
+        self.cellprob_pos_weight = cellprob_pos_weight
 
         if focal_alpha is not None and focal_alpha != "auto":
             self.register_buffer("focal_alpha", torch.tensor(focal_alpha, dtype=torch.float32))
@@ -44,7 +46,10 @@ class PanopticLoss(nn.Module):
 
         pred_cellprob = preds[:, 2]
         gt_cellprob = batch["cellprob"]
-        cellprob_loss = F.binary_cross_entropy_with_logits(pred_cellprob, gt_cellprob)
+        cellprob_loss = F.binary_cross_entropy_with_logits(
+            pred_cellprob, gt_cellprob,
+            pos_weight=torch.tensor(self.cellprob_pos_weight, device=pred_cellprob.device),
+        )
 
         total_loss = flow_loss + self.cellprob_weight * cellprob_loss
         loss_items = {
