@@ -27,7 +27,6 @@ class PanopticValidator(BaseValidator):
     def update_metrics(self, preds, batch):
         with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=False):
             preds_float = preds.float()
-        pred_np = preds_float[0].cpu().numpy() if preds.shape[0] == 1 else preds_float.cpu().numpy()
 
         for b in range(preds.shape[0]):
             p = preds_float[b].cpu().numpy()
@@ -45,6 +44,15 @@ class PanopticValidator(BaseValidator):
                                         device=self.device)
 
             gt_labels = batch["labels"][b].cpu().numpy()
+            n_pred = len(np.unique(pred_labels[pred_labels > 0]))
+            n_gt = len(np.unique(gt_labels[gt_labels > 0]))
+            if not hasattr(self, "_n_pred_total"):
+                self._n_pred_total = 0
+                self._n_gt_total = 0
+                self._n_samples = 0
+            self._n_pred_total += n_pred
+            self._n_gt_total += n_gt
+            self._n_samples += 1
 
             if p.shape[0] > 3:
                 pred_class_map = np.argmax(p[3:], axis=0)
@@ -102,13 +110,12 @@ class PanopticValidator(BaseValidator):
         )
 
     def print_results(self, results):
-        bPQ = results.get("bPQ", 0.0)
-        mPQ = results.get("mPQ", 0.0)
-        print(f"\nValidation Results:")
-        print(f"  bPQ: {bPQ:.4f}")
-        print(f"  mPQ: {mPQ:.4f}")
+        LOGGER.info(f"Validation: bPQ={results.get('bPQ', 0):.4f}, mPQ={results.get('mPQ', 0):.4f}")
         per_class = results.get("per_class_pq", {})
-        for cls_id, pq in sorted(per_class.items()):
+        for cls_id, pq in per_class.items():
             name = NUCLEUS_CLASSES[cls_id] if cls_id < len(NUCLEUS_CLASSES) else f"Class{cls_id}"
-            print(f"  {name}: PQ={pq:.4f}")
-        LOGGER.info(f"Validation: bPQ={bPQ:.4f}, mPQ={mPQ:.4f}")
+            LOGGER.info(f"  {name}: PQ={pq:.4f}")
+        if hasattr(self, "_n_samples") and self._n_samples > 0:
+            avg_pred = self._n_pred_total / self._n_samples
+            avg_gt = self._n_gt_total / self._n_samples
+            LOGGER.info(f"  Avg instances/sample: pred={avg_pred:.1f}, gt={avg_gt:.1f}")

@@ -145,6 +145,7 @@ class BaseTrainer:
             total_epochs=self.epochs,
             lr_decay_milestones=self.args.get("lr_decay_milestones", [-100, -50]),
             lr_decay_factor=self.args.get("lr_decay_factor", 10),
+            min_lr_ratio=self.args.get("min_lr_ratio", 0.01),
         )
 
     def preprocess_batch(self, batch):
@@ -171,15 +172,20 @@ class BaseTrainer:
         raise NotImplementedError
 
 
+import math
+
+
 class LRWarmupCosineScheduler:
     def __init__(self, optimizer, warmup_epochs=10, total_epochs=2000,
-                 lr_decay_milestones=None, lr_decay_factor=10):
+                 lr_decay_milestones=None, lr_decay_factor=10,
+                 min_lr_ratio=0.01):
         self.optimizer = optimizer
         self.warmup_epochs = warmup_epochs
         self.total_epochs = total_epochs
         self.lr_decay_milestones = lr_decay_milestones or []
         self.lr_decay_factor = lr_decay_factor
         self.base_lr = optimizer.param_groups[0]["lr"]
+        self.min_lr = self.base_lr * min_lr_ratio
         self.current_lr = 0.0
         self.epoch = 0
 
@@ -188,11 +194,12 @@ class LRWarmupCosineScheduler:
         if self.epoch <= self.warmup_epochs:
             self.current_lr = self.base_lr * self.epoch / self.warmup_epochs
         else:
-            self.current_lr = self.base_lr
+            progress = (self.epoch - self.warmup_epochs) / max(1, self.total_epochs - self.warmup_epochs)
+            cosine_lr = self.min_lr + 0.5 * (self.base_lr - self.min_lr) * (1 + math.cos(math.pi * progress))
+            self.current_lr = cosine_lr
             for milestone in self.lr_decay_milestones:
                 abs_milestone = self.total_epochs + milestone if milestone < 0 else milestone
                 if self.epoch >= abs_milestone:
-                    self.current_lr = self.base_lr / self.lr_decay_factor
-                    self.base_lr = self.current_lr
+                    self.current_lr = self.min_lr
         for pg in self.optimizer.param_groups:
             pg["lr"] = self.current_lr
