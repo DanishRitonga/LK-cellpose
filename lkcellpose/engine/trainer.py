@@ -57,9 +57,9 @@ class BaseTrainer:
                                      if k in ("flow_weight", "cellprob_weight", "class_weight",
                                               "focal_gamma", "focal_alpha")})
         self.optimizer = self.build_optimizer()
+        self.scheduler = self.build_scheduler()
         for pg in self.optimizer.param_groups:
             pg["lr"] = 0.0
-        self.scheduler = self.build_scheduler()
         self.train_loader = self.get_dataloader("train")
         self.val_loader = self.get_dataloader("val")
         self.scaler = None
@@ -95,7 +95,11 @@ class BaseTrainer:
                 self.loss = loss.item() * grad_accum
                 self.loss_items = {k: v.item() for k, v in loss_items.items()}
                 if (i + 1) % grad_accum == 0 or (i + 1) == len(self.train_loader):
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                    total_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                    if not torch.isfinite(total_norm):
+                        LOGGER.warning(f"Non-finite grad norm {total_norm:.4f} at step {self.global_step}, skipping")
+                        self.optimizer.zero_grad()
+                        continue
                     self.optimizer.step()
                     self.optimizer.zero_grad()
                     if self.ema:
