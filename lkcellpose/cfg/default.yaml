@@ -22,13 +22,14 @@ panoptic: true
 # Train
 epochs: 2000
 batch: 8
-lr0: 1.0e-3
-weight_decay: 0.1
-optimizer: adamw
+lr0: 0.1
+weight_decay: 1.0e-5
+optimizer: sgd
 warmup_epochs: 10
 lr_decay_milestones: [-100, -50]
 lr_decay_factor: 10
 min_lr_ratio: 0.01
+momentum: 0.9
 grad_accum_steps: 32
 amp: true
 amp_dtype: bfloat16
