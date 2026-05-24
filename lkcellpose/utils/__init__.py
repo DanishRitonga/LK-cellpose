@@ -27,6 +27,11 @@ class IterableSimpleNamespace(SimpleNamespace):
 import logging
 
 LOGGER = logging.getLogger("lkcellpose")
+if not LOGGER.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(message)s"))
+    LOGGER.addHandler(_handler)
+    LOGGER.setLevel(logging.INFO)
 
 RANK = -1
 ROOT = Path(__file__).parent.parent
