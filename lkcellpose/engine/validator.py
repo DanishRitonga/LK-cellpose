@@ -17,6 +17,8 @@ class BaseValidator:
         self.callbacks = _callbacks or get_default_callbacks()
         self.metrics = None
         self.speed = {"preprocess": 0.0, "inference": 0.0, "postprocess": 0.0}
+        from lkcellpose.utils.torch_utils import select_device
+        self.device = select_device(self.args.get("device", "auto"))
 
     @smart_inference_mode()
     def __call__(self, trainer=None, model=None):
