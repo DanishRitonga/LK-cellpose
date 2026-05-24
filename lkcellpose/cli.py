@@ -187,8 +187,7 @@ def _run_val(args):
         overrides["data_dir"] = args.data_dir
     if args.batch:
         overrides["batch"] = args.batch
-    results = model.val(**overrides)
-    print(f"\nDone. Results returned.")
+    model.val(**overrides)
 
 
 def _run_info(args):
