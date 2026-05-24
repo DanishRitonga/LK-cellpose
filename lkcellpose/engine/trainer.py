@@ -136,6 +136,7 @@ class BaseTrainer:
         }
         if self.ema:
             ckpt["ema"] = self.ema.ema.state_dict()
+        self.wdir.mkdir(parents=True, exist_ok=True)
         torch.save(ckpt, self.wdir / f"{name}.pt")
 
     def build_optimizer(self):
