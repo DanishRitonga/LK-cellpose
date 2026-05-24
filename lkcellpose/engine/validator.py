@@ -1,5 +1,7 @@
+import json
 import torch
 import numpy as np
+from pathlib import Path
 from tqdm import tqdm
 from lkcellpose.cfg import get_cfg, DEFAULT_CFG_PATH
 from lkcellpose.utils import LOGGER, NUCLEUS_CLASSES
@@ -12,7 +14,7 @@ class BaseValidator:
     def __init__(self, dataloader=None, save_dir=None, args=None, _callbacks=None):
         self.args = get_cfg(overrides=args) if args else get_cfg()
         self.dataloader = dataloader
-        self.save_dir = save_dir
+        self.save_dir = Path(save_dir) if save_dir else Path(self.args.get("project", "runs")) / self.args.get("name", "val")
         self.training = True
         self.callbacks = _callbacks or get_default_callbacks()
         self.metrics = None
@@ -43,6 +45,7 @@ class BaseValidator:
             self.run_callbacks("on_val_batch_end")
         results = self.get_stats()
         self.print_results(results)
+        self.save_results(results)
         self.run_callbacks("on_val_end")
         return results
 
@@ -72,3 +75,16 @@ class BaseValidator:
 
     def get_dataloader(self):
         raise NotImplementedError
+
+    def save_results(self, results):
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+        save_path = self.save_dir / "val_results.json"
+        serializable = {}
+        for k, v in results.items():
+            if isinstance(v, dict):
+                serializable[k] = {str(kk): vv for kk, vv in v.items()}
+            else:
+                serializable[k] = v
+        with open(save_path, "w") as f:
+            json.dump(serializable, f, indent=2)
+        LOGGER.info(f"Results saved to {save_path}")
