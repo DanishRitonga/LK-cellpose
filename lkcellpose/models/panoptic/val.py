@@ -50,9 +50,14 @@ class PanopticValidator(BaseValidator):
                 self._n_pred_total = 0
                 self._n_gt_total = 0
                 self._n_samples = 0
+                self._flow_mag_sum = 0.0
+                self._cellprob_pos_sum = 0
             self._n_pred_total += n_pred
             self._n_gt_total += n_gt
             self._n_samples += 1
+            flow_mag = np.sqrt(p[0]**2 + p[1]**2)
+            self._flow_mag_sum += flow_mag.mean()
+            self._cellprob_pos_sum += (cellprob > 0.5).sum()
 
             if p.shape[0] > 3:
                 pred_class_map = np.argmax(p[3:], axis=0)
@@ -119,3 +124,6 @@ class PanopticValidator(BaseValidator):
             avg_pred = self._n_pred_total / self._n_samples
             avg_gt = self._n_gt_total / self._n_samples
             LOGGER.info(f"  Avg instances/sample: pred={avg_pred:.1f}, gt={avg_gt:.1f}")
+            avg_flow_mag = self._flow_mag_sum / self._n_samples
+            avg_cellprob_pos = self._cellprob_pos_sum / (self._n_samples * 256 * 256) * 100
+            LOGGER.info(f"  Avg flow magnitude: {avg_flow_mag:.3f}, cellprob>0.5: {avg_cellprob_pos:.1f}%")

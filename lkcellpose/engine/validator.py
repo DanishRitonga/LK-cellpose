@@ -36,6 +36,7 @@ class BaseValidator:
 
         self.run_callbacks("on_val_start")
         self.init_metrics(model)
+        model.eval()
         results = {}
         for batch in tqdm(self.dataloader, desc="Validating"):
             self.run_callbacks("on_val_batch_start")
@@ -43,6 +44,7 @@ class BaseValidator:
             preds = model(batch["img"])
             self.update_metrics(preds, batch)
             self.run_callbacks("on_val_batch_end")
+        model.train()
         results = self.get_stats()
         self.print_results(results)
         self.save_results(results)
