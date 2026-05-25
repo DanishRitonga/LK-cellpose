@@ -19,6 +19,14 @@ class PanopticValidator(BaseValidator):
         self.pq_metric = PanopticQuality(n_classes=n_classes)
         self.loss_sum = 0.0
         self.n_batches = 0
+        # Reset diagnostic counters every validation run
+        self._n_pred_total = 0
+        self._n_gt_total = 0
+        self._n_samples = 0
+        self._flow_mag_sum = 0.0
+        self._flow_mag_fg_sum = 0.0
+        self._fg_pixel_count = 0
+        self._cellprob_pos_sum = 0
 
     def preprocess(self, batch):
         batch = super().preprocess(batch)
@@ -51,17 +59,22 @@ class PanopticValidator(BaseValidator):
             gt_labels = batch["labels"][b].cpu().numpy()
             n_pred = len(np.unique(pred_labels[pred_labels > 0]))
             n_gt = len(np.unique(gt_labels[gt_labels > 0]))
-            if not hasattr(self, "_n_pred_total"):
-                self._n_pred_total = 0
-                self._n_gt_total = 0
-                self._n_samples = 0
-                self._flow_mag_sum = 0.0
-                self._cellprob_pos_sum = 0
             self._n_pred_total += n_pred
             self._n_gt_total += n_gt
             self._n_samples += 1
-            flow_mag_raw = np.sqrt(p[0]**2 + p[1]**2)
-            self._flow_mag_sum += flow_mag_raw.mean()
+
+            # Flow magnitude diagnostics (raw network output scale)
+            flow_mag = np.sqrt(p[0]**2 + p[1]**2)
+            self._flow_mag_sum += flow_mag.mean()
+
+            # Foreground-only flow magnitude using GT labels
+            # (more accurate than using predicted cellprob as foreground mask)
+            gt_fg = gt_labels > 0
+            n_fg = gt_fg.sum()
+            if n_fg > 0:
+                self._flow_mag_fg_sum += flow_mag[gt_fg].mean()
+                self._fg_pixel_count += 1
+
             self._cellprob_pos_sum += (cellprob > 0.5).sum()
 
             if p.shape[0] > 3:
@@ -131,4 +144,10 @@ class PanopticValidator(BaseValidator):
             LOGGER.info(f"  Avg instances/sample: pred={avg_pred:.1f}, gt={avg_gt:.1f}")
             avg_flow_mag = self._flow_mag_sum / self._n_samples
             avg_cellprob_pos = self._cellprob_pos_sum / (self._n_samples * 256 * 256) * 100
-            LOGGER.info(f"  Avg raw flow magnitude: {avg_flow_mag:.3f} (expect ~5.0), cellprob>0.5: {avg_cellprob_pos:.1f}%")
+            LOGGER.info(f"  Avg flow magnitude (all pixels): {avg_flow_mag:.3f}")
+            if self._fg_pixel_count > 0:
+                avg_flow_fg = self._flow_mag_fg_sum / self._fg_pixel_count
+                LOGGER.info(f"  Avg flow magnitude (fg only): {avg_flow_fg:.3f} (expect ~5.0)")
+            else:
+                LOGGER.info(f"  Avg flow magnitude (fg only): N/A (no fg pixels)")
+            LOGGER.info(f"  cellprob>0.5: {avg_cellprob_pos:.1f}%")

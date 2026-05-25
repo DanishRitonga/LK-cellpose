@@ -105,7 +105,9 @@ class BaseTrainer:
                         self.ema.update(self.model)
                     optimizer_step += 1
                 self.global_step += 1
-                pbar.set_postfix(loss=self.loss, lr=self.optimizer.param_groups[0]["lr"])
+                lr_enc = self.optimizer.param_groups[0]["lr"]
+                lr_dec = self.optimizer.param_groups[1]["lr"] if len(self.optimizer.param_groups) > 1 else lr_enc
+                pbar.set_postfix(loss=self.loss, lr_enc=f"{lr_enc:.1e}", lr_dec=f"{lr_dec:.1e}")
                 self.run_callbacks("on_train_batch_end")
             self.run_callbacks("on_train_epoch_end")
             if (epoch + 1) % self.args.get("val_interval", 1) == 0:
@@ -142,11 +144,54 @@ class BaseTrainer:
         lr = float(self.args.get("lr0", 1e-5))
         wd = float(self.args.get("weight_decay", 0.1))
         name = self.args.get("optimizer", "adamw").lower()
+        lr_decoder = float(self.args.get("lr_decoder", lr))
+
+        # Discriminative LR: pretrained encoder uses lr, random-init decoder
+        # uses lr_decoder (typically 10x higher for faster convergence).
+        # This is critical for transfer learning — the randomly initialized
+        # decoder/head need higher LR to learn from scratch, while the
+        # pretrained encoder should change slowly to preserve features.
+        param_groups = self._build_param_groups(lr, lr_decoder, wd)
+
         if name == "sgd":
             momentum = float(self.args.get("momentum", 0.9))
-            return torch.optim.SGD(self.model.parameters(), lr=lr, momentum=momentum, weight_decay=wd)
+            return torch.optim.SGD(param_groups, momentum=momentum)
         else:
-            return torch.optim.AdamW(self.model.parameters(), lr=lr, weight_decay=wd)
+            return torch.optim.AdamW(param_groups)
+
+    def _build_param_groups(self, lr_encoder, lr_decoder, wd):
+        """Split model parameters into encoder (pretrained) and decoder (random-init)
+        groups with separate learning rates.
+
+        Returns list of param_group dicts suitable for optimizer constructor.
+        """
+        encoder_params = []
+        decoder_params = []
+        for name, param in self.model.named_parameters():
+            if not param.requires_grad:
+                continue
+            # Encoder parameters contain "encoder" in their name
+            if name.startswith("encoder."):
+                encoder_params.append(param)
+            else:
+                # Decoder, head, and any other non-encoder params
+                decoder_params.append(param)
+
+        groups = []
+        if encoder_params:
+            groups.append({"params": encoder_params, "lr": lr_encoder, "weight_decay": wd})
+        if decoder_params:
+            groups.append({"params": decoder_params, "lr": lr_decoder, "weight_decay": wd})
+
+        if not groups:
+            # Fallback: all params with encoder LR
+            groups.append({"params": self.model.parameters(), "lr": lr_encoder, "weight_decay": wd})
+
+        n_enc = sum(p.numel() for p in encoder_params) if encoder_params else 0
+        n_dec = sum(p.numel() for p in decoder_params) if decoder_params else 0
+        LOGGER.info(f"Optimizer groups: {len(encoder_params)} encoder params ({n_enc:,} elements, lr={lr_encoder}), "
+                    f"{len(decoder_params)} decoder params ({n_dec:,} elements, lr={lr_decoder})")
+        return groups
 
     def build_scheduler(self):
         warmup = self.args.get("warmup_epochs", 10)
@@ -192,37 +237,40 @@ class LRStepDecayScheduler:
           if total_epochs > 300:  halve lr every 10 epochs starting at epoch (total-100)
           if total_epochs > 99:  halve lr every 5 epochs starting at epoch (total-50)
       - If total_epochs <= 99: constant lr after warmup
+
+    Supports discriminative LRs: each param group scales proportionally
+    from its own base_lr.
     """
 
     def __init__(self, optimizer, warmup_epochs=10, total_epochs=2000):
         self.optimizer = optimizer
         self.warmup_epochs = warmup_epochs
         self.total_epochs = total_epochs
-        self.base_lr = optimizer.param_groups[0]["lr"]
-        self.current_lr = 0.0
+        # Store each param group's base LR
+        self.base_lrs = [pg["lr"] for pg in optimizer.param_groups]
+        self.current_lrs = [0.0] * len(self.base_lrs)
         self.epoch = -1
-        # Pre-compute full LR schedule to match cellpose exactly
+        # Pre-compute LR schedule (as fraction of base_lr)
         self._lr_schedule = self._build_schedule()
 
     def _build_schedule(self):
-        """Build LR array matching cellpose v4 logic."""
+        """Build LR schedule as fractions of base_lr, matching cellpose v4 logic."""
         n = self.total_epochs
-        lr = self.base_lr
-        # Linear warmup
-        schedule = np.linspace(0, lr, self.warmup_epochs).tolist()
-        # Constant
-        schedule.extend([lr] * max(0, n - self.warmup_epochs))
-        # Late step-decay (matches cellpose/train.py lines 406-415)
+        # Linear warmup from 0 to 1
+        schedule = np.linspace(0, 1.0, self.warmup_epochs).tolist()
+        # Constant at 1.0
+        schedule.extend([1.0] * max(0, n - self.warmup_epochs))
+        # Late step-decay
         if n > 300:
             schedule = schedule[: n - 100]
-            current = schedule[-1] if schedule else lr
+            current = schedule[-1] if schedule else 1.0
             for _ in range(10):
                 current = current / 2
                 schedule.extend([current] * 10)
             schedule = schedule[:n]
         elif n > 99:
             schedule = schedule[: n - 50]
-            current = schedule[-1] if schedule else lr
+            current = schedule[-1] if schedule else 1.0
             for _ in range(10):
                 current = current / 2
                 schedule.extend([current] * 5)
@@ -235,6 +283,7 @@ class LRStepDecayScheduler:
         else:
             self.epoch += 1
         idx = min(self.epoch, len(self._lr_schedule) - 1)
-        self.current_lr = self._lr_schedule[idx]
-        for pg in self.optimizer.param_groups:
-            pg["lr"] = self.current_lr
+        frac = self._lr_schedule[idx]
+        for i, pg in enumerate(self.optimizer.param_groups):
+            pg["lr"] = self.base_lrs[i] * frac
+        self.current_lrs = [self.base_lrs[i] * frac for i in range(len(self.base_lrs))]

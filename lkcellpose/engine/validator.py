@@ -62,6 +62,8 @@ class BaseValidator:
         batch["img"] = batch["img"].to(self.device)
         if "flows" in batch:
             batch["flows"] = batch["flows"].to(self.device)
+        if "cellprob" in batch:
+            batch["cellprob"] = batch["cellprob"].to(self.device)
         if "class_map" in batch:
             batch["class_map"] = batch["class_map"].to(self.device)
         return batch
